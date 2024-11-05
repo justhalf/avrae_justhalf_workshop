@@ -117,9 +117,12 @@ elif subc == 'stats':
     modeidx = 0
     for i, (v, n) in enumerate(dist):
         if n > maxn:
-            maxn = n
+            if op not in '<>':
+                maxn = n
             mode = v
             modeidx = i
+        if op in '<>':
+            maxn += n
     start_idx = max(0, modeidx-20)
     end_idx = min(len(dist), modeidx+20+1)
 
@@ -135,10 +138,8 @@ elif subc == 'stats':
         cumsum += n
         if op == '<':
             n = cumsum
-            maxn = 1
         elif op == '>':
             n = count-cumsum+n
-            maxn = 1
         p = 100*n/count
         divisor = 100 / display_width
         fill = min(3*display_width, int(round((300*n/maxn)/divisor)))

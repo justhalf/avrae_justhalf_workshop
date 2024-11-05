@@ -52,9 +52,9 @@ emb_help = {
             {'title':'__Usage__',
              'body':(f'`!{al_name} <figurine_name> (-loc <location>) <otherInitArgs>`\n'
                      f'* `figurine_name` can be any of the available figurine forms specified below.\n'
-                     f'* Specify a location to summon the creature on that location. Other init arguments, such as '
-                     f'`-name`, `-group`, and `-p` can also be supplied. It will be passed along to the `!madd` '
-                     f'command.\n'
+                     f'* `-loc <location>`: Specify a location to summon the creature on that location (for OTFBM). '
+                     f'Other init arguments, such as `-name`, `-group`, and `-p` can also be given. '
+                     f'It will be passed to the `!i madd` command.\n'
                      f'* Special interaction with `-h`: by default, this alias will unhide the stats. '
                      f'You can undo this by specifying `-h` to this alias, which will make the stats hidden.\n'
                      f'* Special interaction with `-group`: by default, this alias will assign the creature into the '
@@ -226,6 +226,8 @@ cur_group = None
 for co_group in co.groups:
     if co_group.get_combatant(co.me.name):
         cur_group = co_group.name
+        if init is None:
+            init = co_group.init
 if not group:
     group = cur_group
 if not group:
@@ -244,21 +246,42 @@ madd_args = [arg.replace('"', '\\"') for arg in l_args]
 madd_args = [f'"{arg}"' for arg in madd_args]
 madd_args = ' '.join(madd_args+['-h']*(not hidden)+[f'-p {init}']+[f'-group "{group}"'])
 
+if loc_s:
+    loc_msg = loc_s.replace(' | ', '\n')
+else:
+    loc_msg = ''
+
+token = '%%jh!figurine%%|'
+token_l = len(token)
+open_c = '<drac2'+'>'
+clos_c = '</drac2'+'>'
 emb_out = jh.embed(
     title=f'{jh.C[jh.CH_NAME]} summons a {fig_key}!',
     desc=emb_help['desc'],
     fields=[
         {'title':f'{fig_key} summoned!',
-         'body':f'Size: {fig["size"]}{loc_s}\nGroup: {group}\nInitiative: {init}',
+         'body':(f'Size: {fig["size"]}{loc_msg}\n'
+                 f'Name: {open_c}return COMBAT_NAME{clos_c}\n'
+                 f'Group: {group}\n'
+                 f'Initiative: {init}'),
          },
         {'title':cc_name,
          'body':cc_str,
          },
         ]+warns,
     )
+emb_out = ' '.join(emb_out.split(' ')[1:])
+main_c = f'''
+fig_combatants = []
+for c in combat().combatants:
+    if str(c.note).startswith('{token}'):
+        fig_combatants.append(c)
+        c.set_note(c.note[{token_l}:])
+COMBAT_NAME = ', '.join(fig_combatant.name for fig_combatant in fig_combatants) or '*unknown*'
+'''
 ml_commands = ['multiline',
-       f'!i madd "{fig["name"]}" {madd_args} -note "Size: {fig["size"]} | Color: b (blue){loc_s}"',
-       f'!{emb_out}',
+       f'!i madd "{fig["name"]}" {madd_args} -note "{token}Size: {fig["size"]} | Color: b (blue){loc_s}"',
+       f'!tembed {open_c}{main_c}{clos_c} {emb_out}',
        ]
 if add_group_s:
     ml_commands.insert(1, add_group_s)

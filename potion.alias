@@ -269,7 +269,7 @@ if l_args != args[:len(l_args)] and not do_info:
     # So, print from the first not matching one
     # Multiple locational arguments is supported so that the potion name can be specified without quotes
     first_idx_nomatch = 0
-    while first_idx_nomatch < min(len(l_args), args[:len(l_args)]):
+    while first_idx_nomatch < min(len(l_args), len(args[:len(l_args)])):
         if l_args[first_idx_nomatch] != args[first_idx_nomatch]: break
         first_idx_nomatch += 1
     warns.append({'title':'Error :x:', 'body':f'Unrecognized arguments: {" ".join(l_args[first_idx_nomatch:])}'})
