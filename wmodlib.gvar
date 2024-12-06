@@ -90,20 +90,28 @@ def inject_bb(target, weapon_name, potent=False):
     if raw.get('automation', []):
         raw['automation'] = [dict(v) for v in raw['automation']]
         target_nodes = produce_target_nodes(raw['automation'])
-        for eff in target_nodes:
+        for eff, eff_parent, eff_idx in target_nodes:
             if eff.get('type', '') == 'target' and eff.get('target', '') in ['each', 'all']:
                 eff['effects'] = [dict(v) for v in eff.get('effects', [])]
                 attack_nodes = produce_attack_nodes(eff['effects'])
-                for attack_node in attack_nodes:
+                for attack_node, attack_node_parent, attack_node_idx in attack_nodes:
                     if attack_node.get('type', '') == 'attack':
                         attack_node['hit'] = [dict(v) for v in attack_node.get('hit', [])]
                         damage_nodes = produce_damage_nodes(attack_node['hit'])
-                        for damage_node in damage_nodes:
+                        for damage_node, damage_node_parent, damage_node_idx in damage_nodes:
                             if damage_node.get('type', '') == 'damage' and not damage_node.get('fixedValue', False):
-                                damage_node['damage'] = f'{damage_node.damage}{bb_dmg_s}'
                                 success = True
-                        if success:
-                            attack_node['hit'].append(bb_effect_auto)
+                                new_damage_node = dict(damage_node)
+                                new_damage_node['damage'] = f'{damage_node.damage}{bb_dmg_s}'
+                                new_branch_node = {'type':'condition',
+                                                   'condition': 'targetNumber == 1 and targetIteration == 1',
+                                                   'onTrue': [
+                                                       new_damage_node,
+                                                       bb_effect_auto,
+                                                       ],
+                                                   'onFalse': [damage_node],
+                                                   }
+                                damage_node_parent[damage_node_idx] = new_branch_node
         if success:
             raw['automation'].append(bb_text_auto)
             if potent and bb_n_dice > 0:
@@ -127,9 +135,9 @@ def inject_bb(target, weapon_name, potent=False):
 
 def produce_target_nodes(root):
     output = []
-    for eff in root:
+    for idx, eff in enumerate(root):
         if eff.get('type', '') == 'target' and eff.get('target', '') in ['each', 'all']:
-            output.append(eff)
+            output.append((eff, root, idx))
         elif eff.get('type', '') == 'condition':
             eff['onTrue'] = [dict(v) for v in eff.get('onTrue', [])]
             eff['onFalse'] = [dict(v) for v in eff.get('onFalse', [])]
@@ -139,9 +147,9 @@ def produce_target_nodes(root):
 
 def produce_attack_nodes(root):
     output = []
-    for eff in root:
+    for idx, eff in enumerate(root):
         if eff.get('type', '') == 'attack':
-            output.append(eff)
+            output.append((eff, root, idx))
         elif eff.get('type', '') == 'condition':
             eff['onTrue'] = [dict(v) for v in eff.get('onTrue', [])]
             eff['onFalse'] = [dict(v) for v in eff.get('onFalse', [])]
@@ -151,9 +159,9 @@ def produce_attack_nodes(root):
 
 def produce_damage_nodes(root):
     output = []
-    for eff in root:
+    for idx, eff in enumerate(root):
         if eff.get('type', '') == 'damage' and not eff.get('fixedValue', False):
-            output.append(eff)
+            output.append((eff, root, idx))
         elif eff.get('type', '') == 'condition':
             eff['onTrue'] = [dict(v) for v in eff.get('onTrue', [])]
             eff['onFalse'] = [dict(v) for v in eff.get('onFalse', [])]
