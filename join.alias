@@ -1,12 +1,93 @@
 <drac2>
+al_name = 'join'
+footer = f'!{al_name} ? | Advanced join with starting effects'
+
+using(jh='65a30ab9-540c-4bdf-86ce-7af4760604a9')
+jh.setup(
+        al_name=al_name,
+        footer=footer,
+        )
+
 ch = character()
-cmd = ch.get_cvar('join','i join')
+co = combat()
+
 args = &ARGS&
-if args and args[0]:
-    loc = args[0].upper()
+p_args = argparse(args)
+
+# Alias begins here
+if args:
+    loc = args[0]
 else:
     loc = ''
-cmd = cmd.replace('%LOC%', loc)
-return cmd
+
+join_cvar = 'join'
+join_cmd = ch.get_cvar('join', None)
+if join_cmd is None:
+    join_cmd = 'i join'
+
+if join_cmd[0] != '[':
+    # Old join cvar format which is simply run after replacing the location
+    join_cmd = join_cmd.replace('%LOC%', loc)
+    return join_cmd
+
+# The join cvar is set up for delayed command, so there'll only be one embed
+# The format of the JSON would be a list of JSON objects (Python dictionaries)
+# Each having the following keys:
+# - fn: function name to call on the combatant, if this starts with bang (!), the whole thing will be run as Avrae command
+# - <arg_name>: argument value
+# For example, to add an effect that displays a note, the object would be:
+# {
+#   "fn": "add_effect",
+#   "name": "Small Ooze",
+#   "desc": "Not a humanoid"
+# }
+# The advantage of this is that a sequence of non-Avrae command will be executed together in a single Avrae command
+
+open_co = '<drac2'+'>'
+clos_co = '</drac2'+'>'
+ARG_DISP_LIMIT = 25
+
+def argify(s):
+    if typeof(s) == 'str':
+        return '"""'+s.replace('"', '\\"')+'"""'
+    return '('+dump_json(s)+')'
+
+def build_cmd(effects):
+    code = ['ch = combat().me', 'effs=[]']
+    for effect in effects:
+        cur_args = [f'{arg}={argify(val)}' for arg, val in effect.items() if arg != 'fn']
+        cur_args_s = ', '.join(cur_args)
+        prefix = f'{effect["fn"]}: '.replace("'", "\\'") if effect['fn'] != 'add_effect' else ''
+        code.append(f'''effs.append('{prefix}'+str(ch.{effect["fn"]}({cur_args_s})).split('\\n')[0])''')
+    code = '\n'.join(code)
+    emb_code = jh.embed(
+            title='Applying Effects',
+            desc="{{'\\n* '.join(['']+effs)}}",
+            )
+    emb_code = emb_code.split(' ', maxsplit=1)[1]
+    return f'!tembed {open_co}{code}{clos_co} {emb_code}'
+
+cmds = []
+effects = []
+join_cmds = load_json(join_cmd)
+for join_cmd in join_cmds:
+    if 'fn' not in join_cmd:
+        err(f'The join cvar is incorrectly formatted for: {dump_json(join_cmd)}')
+    fn = join_cmd['fn']
+    if fn[0] == '!':
+        # If Avrae command, add as is, flushing all current effects as well
+        if effects:
+            cmds.append(build_cmd(effects))
+            effects = []
+        cmds.append(fn.replace('%LOC%', loc))
+        continue
+    effects.append(join_cmd)
+if effects:
+    cmds.append(build_cmd(effects))
+    effects = []
+if len(cmds) == 1:
+    return '!'+cmds[0].lstrip('!')
+cmds[0:0] = ['multiline']
+return '\n'.join(cmds)
 </drac2>
--color <color>
+

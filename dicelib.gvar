@@ -7,7 +7,13 @@
 def normalize(dist):
     total_w = sum(n for v, n in dist)
     if total_w == 0: return [(0, 1)]
-    return [(v, n/total_w) for v, n in dist]
+    result = {}
+    for v, n in dist:
+        if v not in result: result[v] = 0
+        result[v] += n/total_w
+    result = list(result.items())
+    result.sort()
+    return result
 
 DIS_DIST = [(1, 39), (2, 37), (3, 35), (4, 33), (5, 31),
             (6, 29), (7, 27), (8, 25), (9, 23), (10, 21),
@@ -148,7 +154,7 @@ def _calc(dice, dc=None, raw=False):
                         sel_idx += 1
                     if kept is not None:
                         full_opcode['k'] = kept
-                        one_die = normalize([(v, n if v in kept else 0) for v, n in one_die])
+                        one_die = normalize([(v if v in kept else 0, n) for v, n in one_die])
                     h_count = None
                     l_count = None
                     while sel_idx < len(operator.sels):
@@ -215,7 +221,7 @@ def _calc(dice, dc=None, raw=False):
                         sel_idx += 1
                     if dropped is not None:
                         full_opcode['p'] = dropped
-                        one_die = normalize([(v, n if v not in dropped else 0) for v, n in one_die])
+                        one_die = normalize([(v if v not in dropped else 0, n) for v, n in one_die])
                     h_count = None
                     l_count = None
                     while sel_idx < len(operator.sels):
@@ -484,7 +490,7 @@ def _calc(dice, dc=None, raw=False):
                         sel_idx += 1
                     if kept is not None:
                         for idx, one_die in enumerate(dist_set):
-                            one_die = normalize([(v, n if v in kept else 0) for v, n in one_die])
+                            one_die = normalize([(v if v in kept else 0, n) for v, n in one_die])
                             dist_set[idx] = one_die
                     h_count = None
                     l_count = None
@@ -539,7 +545,7 @@ def _calc(dice, dc=None, raw=False):
                         sel_idx += 1
                     if dropped is not None:
                         for idx, one_die in enumerate(dist_set):
-                            one_die = normalize([(v, n if v not in dropped else 0) for v, n in one_die])
+                            one_die = normalize([(v if v not in dropped else 0, n) for v, n in one_die])
                             dist_set[idx] = one_die
                     h_count = None
                     l_count = None
@@ -685,7 +691,7 @@ def _calc(dice, dc=None, raw=False):
     if raw:
         # Returns the distribution
         result = [(v-dc, n) for v, n in vals]
-        result.sort()
+        result = normalize(result)
         return result
     # Calculate prob of beating dc
     for v, n in vals:

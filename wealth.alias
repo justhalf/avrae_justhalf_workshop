@@ -16,6 +16,7 @@ else:
     rets = []
     for char in chars:
         rets.append(f'!char {char}\n!test {op} {bod} {cl} Checking {{{{character().name}}}}...')
+    rets.append(f'!char {character().name}')
     return '\n'.join(rets)
 </drac2>
 <drac2>

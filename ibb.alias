@@ -1,0 +1,73 @@
+<drac2>
+al_name = 'ibb'
+footer = f'!{al_name} ? | Cast Booming Blade with current combatant weapon!'
+
+using(jh='65a30ab9-540c-4bdf-86ce-7af4760604a9')
+using(wmodlib='3ca2e3aa-f3e6-4efe-bee8-eaaedaef6f7d')
+jh.setup(
+        al_name=al_name,
+        footer=footer,
+        )
+
+ch = character()
+co = combat()
+
+args = &ARGS&
+p_args = argparse(args)
+
+def escape(s):
+    return s.replace('"', '\\"')
+
+# Alias begins here
+if not args or args[0] in ['?', 'h', 'help']:
+    return jh.embed(
+        title=f'Alias Manual for Booming Blade',
+        desc=(f'Casts Booming Blade with a weapon. '
+              f'Use this to replace the initial `!i a` in your attack, keeping the rest the same.\n'
+              f'So to attack a hexed Goblin with current combatant\'s longsword, you can do:\n'
+              f'`!{al_name} longs -t go hex`'),
+        fields=[{'title':'__Usage__',
+                 'body':(f'`!{al_name} weaponName <usual attack args>`\n'
+                         f'* This will use the weapon as the material component for the Booming Blade spell\n'
+                         f'* It will use all the normal automation for the weapon, while also adding the Booming '
+                         f'Blade effect on the target\n'
+                         f'* Other snippets can be used as normal, like the `hex` example above')},
+                {'title':'See Also',
+                 'body':(f'* `!bb` for current active character\n'
+                         f'* `!{al_name}` for current combatant\n'
+                         f'* `!rbb` for off-turn combatant\n\n'
+                         f'Designed to be similar to `!a`, `!i a`, and `!rc`')},
+                 ],
+        )
+
+if not co or not co.current:
+    return jh.embed(
+        title=f'There is no current combatant! :x:',
+        desc=(f'This `!{al_name}` alias requires an active combatant.\n\n'
+              f'If you want to run it for your active character, use `!bb` instead.\n\n'
+              f'If it is for an off-turn attack, use `!rbb combatantName` instead.'),
+        )
+target = co.current
+if not p_args.get('i') and not target.spellbook.can_cast('Booming Blade', 0):
+    return jh.embed(
+        title=f'{target.name} cannot cast Booming Blade! :x:',
+        desc=(f'{target.name} does not have the spell in their spellbook.\n\n'
+              f'Use `-i` to ignore this restriction.'),
+        f_thumb=False,
+        )
+
+bb_eff_name = 'Booming Blade Alias Temporary Effect'
+target.remove_effect(bb_eff_name)
+
+success, raw = wmodlib.inject_bb(target, args[0])
+if not success:
+    return raw
+
+target.add_effect(bb_eff_name, attacks=[{'attack':raw}])
+args_s = ' '.join(f'"{escape(arg)}"' for arg in args[1:])
+cmds = [f'multiline',
+        f'!i a "{escape(raw.name)}" {args_s}',
+        f'!i re "{escape(target.name)}" "{bb_eff_name}"',
+        ]
+return '\n'.join(cmds)
+</drac2>

@@ -1,0 +1,51 @@
+<drac2>
+al_name = 'wPyro'
+footer = f'!{al_name} ? | Wand of Pyrotechnics'
+
+using(jh='65a30ab9-540c-4bdf-86ce-7af4760604a9')
+jh.setup(
+        al_name=al_name,
+        footer=footer,
+        )
+
+ch = character()
+co = combat()
+
+args = &ARGS&
+p_args = argparse(args)
+
+# Alias begins here
+cc_name = 'Wand of Pyrotechnics'
+ch.create_cc_nx(cc_name, minVal=0, maxVal=7, reset_by='1d6+1', reset='long', dispType='bubble',
+                desc='For Wand of Pyrotechnics. Regains 1d6+1 charges at dawn.')
+cc_val = ch.get_cc(cc_name)
+if cc_val < 1:
+    return jh.embed(
+        title='Failed to use Wand of Pyrotechnics! :x:',
+        desc=(f'''You don't have enough charges in your Wand of Pyrotechnics to use it now.'''),
+        )
+
+fs = []
+
+ch.mod_cc(cc_name, -1)
+cc_str = f'{ch.cc(cc_name)} (-1)'
+if ch.get_cc(cc_name) == 0:
+    last_check = vroll('1d20')
+    destroyed = last_check.total == 1
+    if destroyed:
+        last_s = ':boom: __The wand is destroyed!__ :boom:'
+    else:
+        last_s = '*Phew! The wand stays intact!*'
+    fs.append({'title':'Spent the last charge!',
+               'body':f'**Is the wand destroyed?** {last_check}\n\n{last_s}'})
+fs.append({'title':cc_name,
+           'body':cc_str})
+return jh.embed(
+    title=f'{ch.name} uses Wand of Pyrotechnics!',
+    desc=f'''This wand has 7 charges. While holding it, you can use an action to expend 1 of its charges and create a harmless burst of multicolored light at a point you can see up to 60 feet away. The burst of light is accompanied by a crackling noise that can be heard up to 300 feet away. The light is as bright as a torch flame but lasts only a second.
+
+The wand regains 1d6 + 1 expended charges daily at dawn. If you expend the wand's last charge, roll a d20. On a 1, the wand erupts in a harmless pyrotechnic display and is destroyed.''',
+    fields=fs,
+    )
+</drac2>
+

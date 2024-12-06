@@ -1,0 +1,162 @@
+# GVAR: 3ca2e3aa-f3e6-4efe-bee8-eaaedaef6f7d
+# Module: wmodlib (Weapon Modification library) 
+#
+# inject_bb(target, weapon_name)
+#    Return a tuple (bool, result)
+#    If bool is True, result is the modified weapon automation as Python dict
+#    If bool is False, result is the embed string to be returned as error message
+
+using(jh='65a30ab9-540c-4bdf-86ce-7af4760604a9')
+
+def inject_bb(target, weapon_name, potent=False):
+    is_self = target == combat().me
+    bb_n_dice = int((target.levels.total_level+1)//6)
+    wisMod = target.stats.get_mod('wis')
+    if bb_n_dice > 0:
+        bb_dmg_s = f'+({bb_n_dice}d8{"+"+wisMod if potent else ""})[thunder]'
+    else:
+        bb_dmg_s = ''
+    bb_dmg1_s = f'{bb_n_dice+1}d8{"+"+wisMod if potent else ""}[thunder]'
+
+    exact = []
+    matches = []
+    for att in target.attacks:
+        if weapon_name.lower() == att.raw.name.lower():
+            exact.append(att)
+        if weapon_name.lower() in att.raw.name.lower():
+            matches.append(att)
+    matches = exact or matches
+    if len(matches) > 1:
+        names = [att.raw.name for att in matches]
+        names_s = '\n* '.join(['']+names)
+        return (False, jh.embed(
+            title='Ambiguous Weapon Name :x:',
+            desc=f'There are multiple weapons matching the name `{weapon_name}`:{names_s}',
+            f_thumb=is_self,
+            ))
+    elif len(matches) == 0:
+        atts_s = '\n* '.join(['']+[att.raw.name for att in target.attacks])
+        atts_s = f'\nYour attacks:{atts_s}' if is_self else ''
+        return (False, jh.embed(
+            title='No Weapon Matches :x:',
+            desc=f'There are no weapons matching the name `{weapon_name}`{atts_s}',
+            f_thumb=is_self,
+            ))
+    weapon = matches[0]
+    weapon_name = weapon.raw.name
+
+    bb_text_auto = {
+            "type": "text",
+            "text": "You brandish the weapon used in the spell's casting and make a melee attack with it against one creature within 5 feet of you. On a hit, the target suffers the weapon attack's normal effects and then becomes sheathed in booming energy until the start of your next turn. If the target willingly moves 5 feet or more before then, the target takes 1d8 thunder damage, and the spell ends.\n\nThis spell's damage increases when you reach certain levels. At 5th level, the melee attack deals an extra 1d8 thunder damage to the target on a hit, and the damage the target takes for moving increases to 2d8. Both damage rolls increase by 1d8 at 11th level (2d8 and 3d8) and again at 17th level (3d8 and 4d8).",
+            "title": "Booming Blade"
+        }
+    bb_potent_auto = {
+            "type": "text",
+            "text": "Starting at 8th level, you add your Wisdom modifier to the damage you deal with any cleric cantrip.",
+            "title": "Potent Spellcasting"
+        }
+    bb_effect_auto = {
+          "type": "ieffect2",
+          "name": "Booming Blade",
+          "duration": "1",
+          "tick_on_caster": True,
+          "buttons": [
+            {
+              "label": "Booming Blade Damage",
+              "automation": [
+                {
+                  "type": "target",
+                  "target": "self",
+                  "effects": [
+                    {
+                      "type": "damage",
+                      "damage": bb_dmg1_s
+                    }
+                  ]
+                },
+                {
+                  "type": "remove_ieffect"
+                },
+                bb_text_auto,
+              ]+([bb_potent_auto] if potent else []),
+              "verb": "moved and took Booming Blade damage",
+              "style": "4",
+            }
+          ]
+        }
+
+    raw = dict(weapon.raw)
+    success = False
+    if raw.get('automation', []):
+        raw['automation'] = [dict(v) for v in raw['automation']]
+        target_nodes = produce_target_nodes(raw['automation'])
+        for eff in target_nodes:
+            if eff.get('type', '') == 'target' and eff.get('target', '') in ['each', 'all']:
+                eff['effects'] = [dict(v) for v in eff.get('effects', [])]
+                attack_nodes = produce_attack_nodes(eff['effects'])
+                for attack_node in attack_nodes:
+                    if attack_node.get('type', '') == 'attack':
+                        attack_node['hit'] = [dict(v) for v in attack_node.get('hit', [])]
+                        damage_nodes = produce_damage_nodes(attack_node['hit'])
+                        for damage_node in damage_nodes:
+                            if damage_node.get('type', '') == 'damage' and not damage_node.get('fixedValue', False):
+                                damage_node['damage'] = f'{damage_node.damage}{bb_dmg_s}'
+                                success = True
+                        if success:
+                            attack_node['hit'].append(bb_effect_auto)
+        if success:
+            raw['automation'].append(bb_text_auto)
+            if potent and bb_n_dice > 0:
+                raw['automation'].append(bb_potent_auto)
+            proper = raw.get('proper', False)
+            if not proper:
+                prefix = 'an ' if raw['name'][0].lower() in 'aeiou' else 'a '
+            else:
+                prefix = ''
+            raw['proper'] = True
+            raw['name'] = f'Booming Blade with {prefix}{raw["name"]}'
+            raw['verb'] = 'casts'
+    if success:
+        return (True, raw)
+    else:
+        return (False, jh.embed(
+            title='Invalid Weapon :x:',
+            desc=f'The specified attack `{weapon_name}` does not deal any damage!',
+            f_thumb=is_self,
+            ))
+
+def produce_target_nodes(root):
+    output = []
+    for eff in root:
+        if eff.get('type', '') == 'target' and eff.get('target', '') in ['each', 'all']:
+            output.append(eff)
+        elif eff.get('type', '') == 'condition':
+            eff['onTrue'] = [dict(v) for v in eff.get('onTrue', [])]
+            eff['onFalse'] = [dict(v) for v in eff.get('onFalse', [])]
+            output.extend(produce_target_nodes(eff['onTrue']))
+            output.extend(produce_target_nodes(eff['onFalse']))
+    return output
+
+def produce_attack_nodes(root):
+    output = []
+    for eff in root:
+        if eff.get('type', '') == 'attack':
+            output.append(eff)
+        elif eff.get('type', '') == 'condition':
+            eff['onTrue'] = [dict(v) for v in eff.get('onTrue', [])]
+            eff['onFalse'] = [dict(v) for v in eff.get('onFalse', [])]
+            output.extend(produce_attack_nodes(eff['onTrue']))
+            output.extend(produce_attack_nodes(eff['onFalse']))
+    return output
+
+def produce_damage_nodes(root):
+    output = []
+    for eff in root:
+        if eff.get('type', '') == 'damage' and not eff.get('fixedValue', False):
+            output.append(eff)
+        elif eff.get('type', '') == 'condition':
+            eff['onTrue'] = [dict(v) for v in eff.get('onTrue', [])]
+            eff['onFalse'] = [dict(v) for v in eff.get('onFalse', [])]
+            output.extend(produce_damage_nodes(eff['onTrue']))
+            output.extend(produce_damage_nodes(eff['onFalse']))
+    return output

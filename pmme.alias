@@ -1,0 +1,11 @@
+<drac2>
+args = &ARGS&
+if args:
+    msg = args[0]
+else:
+    msg = ''
+begin = '<drac2'+'>'
+end = '</drac2'+'>'
+code = f'''err('Check your PM!', True) # --> {msg} <--'''
+return f'''test {begin}{code}{end}'''
+</drac2>

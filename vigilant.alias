@@ -1,0 +1,45 @@
+<drac2>
+al_name = 'vigilant'
+footer = f'!{al_name} ? | Applies Boots of the Vigilant modifier'
+
+using(jh='65a30ab9-540c-4bdf-86ce-7af4760604a9')
+jh.setup(
+        al_name=al_name,
+        footer=footer,
+        )
+
+ch = character()
+co = combat()
+
+args = &ARGS&
+p_args = argparse(args)
+
+# Alias begins here
+ignore = p_args.last('i')
+cc_name = 'Boots of the Vigilant'
+cmbt_name = co.me.group if co and co.me and co.me.group else ch.name
+ch.create_cc_nx(cc_name, minVal=0, maxVal=1, reset='long', dispType='bubble')
+if not ignore and ch.get_cc(cc_name) == 0:
+    return jh.embed(
+        title='You already used Boots of the Vigilant today! :x:',
+        desc='Wait until the next dawn for it to reset.',
+    )
+if not ignore:
+    ch.mod_cc(cc_name, -1)
+    cc_str = ch.cc_str(cc_name)
+r = vroll('1d8')
+if co and co.me:
+    co.me.set_init(new_init := co.me.init+r.total)
+return jh.embed(
+    title=f'{ch.name} uses Boots of the Vigilant!',
+    fields=([{'title':'Meta','body':f'Boots of the Vigilant roll: {r}'},
+             {'title':'Description','body':(f'While you wear these boots, you can sense impending danger. '
+                                            f'After you roll initiative, you can choose to roll a d8 and add it to '
+                                            f'your initiative roll. Once this property is used, it can\'t be used '
+                                            f'again until the next dawn.')}]+
+             ([{'title':'Effect','body':(f'{cmbt_name}\'s init was updated from '
+                                         f'{co.me.init} to {new_init}')}] if co and co.me else [])+
+             ([{'title':cc_name,'body':f'{cc_str} (-1)'}] if not ignore else [])),
+    )
+</drac2>
+

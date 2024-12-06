@@ -27,7 +27,6 @@ def escape(v):
 ch = character()
 
 args = &ARGS&
-p_args = argparse(args)
 
 co = combat()
 
@@ -48,11 +47,11 @@ al_desc = (f'__**Usage**__:\n'
            f'* Describes the potion and the available options for `-choice`\n\n'
            f'`!{al_name} list`\n'
            f'* Lists all supported potions that you have subscribed (see `!potion sub` for more)\n\n'
-           f'`!{al_name} setup (potion name optional) (same args as using it)`\n'
-           f'* Sets up a default arguments for a specific potion (if provided) or for all potions otherwise\n'
+           f'`!{al_name} setup <potion name> (same args as using it)`\n'
+           f'* Sets up a default arguments for a specific potion. Put an empty string "" to setup for all potions.\n'
            f'* This setting is per-character\n\n'
-           f'To default to not using bag management, you can do `!cvar potionNobag 1` (and you can undo it by '
-           f'doing `!cvar remove potionNobag`).\n\n'
+           f'To default to not using bag management, you can do `!{al_name} setup "" nobag` (and you can undo it by '
+           f'doing `!{al_name} setup ""`).\n\n'
            f'__Example__\n'
            f'`!{al_name} heal -rr 3` to drink 3 Potion of Healing\n'
            f'`!{al_name} grow -t Alex` to feed Potion of Growth to Alex\n'
@@ -281,7 +280,7 @@ if l_args != args[:len(l_args)] and not do_info:
 
 # Potion name verification step
 # Reject not found potion name, or empty potion name (allowed only in do_setup)
-if do_setup and not l_args:
+if do_setup and l_args[0] == '':
     # Empty potion name, specific for setup global arguments, skip looking up matching potion name
     potion = None
     potion_name = ''
@@ -367,8 +366,8 @@ elif do_info:
 
 # Reaching here means we want to use the potion
 # Add the stored config into the args, then re-parse
+k_args_override, l_args_override = jh.take_args(args, arg_config)
 args = args + c_config.get("", []) + c_config.get(potion_name, [])
-p_args = argparse(args)
 k_args, l_args = jh.take_args(args, arg_config)
 
 # Continue reading arguments
@@ -381,21 +380,27 @@ do_max = bool(k_args['max'])
 dur = (k_args['-dur']+[None])[0]
 rr = int((k_args['-rr']+['1'])[0])
 ignore_bag = bool(k_args['nobag'])
+ignore_bag_override = bool(k_args_override['nobag'])
 bag_names = k_args['-bag']
+bag_names_override = k_args_override['-bag']
+if ignore_bag_override and bag_names_override:
+    # Argument specifies both bag and nobag. Result: nobag, warn.
+    ignore_bag = True
+    bag_names = []
+    warns.append({'title':'Ignoring bag but `-bag` is provided',
+                  'body':('You specified both `nobag` and `-bag`. Ignoring the bags for now.')})
+elif bag_names and ignore_bag_override:
+    # Setup specifies bag, argument specifies ignore. Result: ignore
+    bag_names = []
+    ignore_bag = ignore_bag_override
+elif ignore_bag and bag_names_override:
+    # Setup specifies nobag, argument specifies bag. Result: use bag
+    ignore_bag = False
+    bag_names = bag_names_override
 nomap = bool(k_args['nomap'])
 choice = (k_args['-choice']+[None])[0]
 if choice is not None:
     choice = str(choice)
-try:
-    if int(get('potionNobag', '0')):
-        ignore_bag = True
-        if bag_names:
-            warns.append({'title':'Ignoring bag but `-bag` is provided',
-                          'body':('You have a `!uvar potionNobag` set up to ignore bags, but you also provided '
-                                  'bags to be used with `-bag`. Ignoring the bags for now.')})
-except:
-    warns.append({'title':'Invalid `potionNobag` UVar',
-                  'body':f'The value of `!uvar potionNobag` is invalid: `{get("potionNoBag")}`'})
 
 ### Processing the potion data and verifying the -choice ###
 
@@ -538,15 +543,29 @@ if errs:
     uniq = [f'* {t_arg} → {ts[0].name}' for t_arg, ts in t_uniq]
     uniq_s = '\n'.join(uniq)
     uniq_s = uniq_s.replace('"', '\\"')
-    return jh.embed(
-        title=f'{ch.name} failed to use a potion! :x:',
-        desc=(f'{al_desc}\n\n'
-              f'**__Error__**: These targets are confirmed valid:\n{uniq_s}\n'
-              f'But there are ambiguous or invalid targets.\n'
-              f'__No potion effect has been applied to anyone.__'
-              ),
-        fields=errs+warns,
-        )
+    if len(t_uniq):
+        uniq = [f'* {t_arg}: {ts[0].name}' for t_arg, ts in t_uniq]
+        uniq_s = '\n'.join(uniq)
+        uniq_s = uniq_s.replace('"', '\\"')
+        return jh.embed(
+            title=f'{ch.name} failed to use a potion! :x:',
+            desc=(f'{al_desc}\n\n'
+                  f'**__Error__**: These targets are confirmed valid:\n{uniq_s}\n'
+                  f'But there are ambiguous or invalid targets.\n'
+                  f'__No potion effect has been applied to anyone.__'
+                  ),
+            fields=errs+warns,
+            )
+    else:
+        return jh.embed(
+            title=f'{ch.name} failed to use a potion! :x:',
+            desc=(f'{al_desc}\n\n'
+                  f'**__Error__**: There are ambiguous or invalid targets.\n'
+                  f'__No potion effect has been applied to anyone.__'
+                  ),
+            fields=errs+warns,
+            f_thumb=False,
+            )
 
 ### Applying the effects ###
 
@@ -591,7 +610,7 @@ for t_arg, [target] in t_uniq:
             ef_name = effect['name']
             if not nomap and ('enlarged' in ef_name.lower() or 'reduced' in ef_name.lower()):
                 # Potion of Growth / Diminution special effect
-                if target != ch:
+                if target != ch and target.note is not None:
                     # Only applicable when in initiative
                     if target.get_effect(ef_name):
                         # Already exists, not changing token size
@@ -789,8 +808,13 @@ if not ignore_bag:
         found_bags = bags
         out = (f'Attempting to remove a {p_name} from your bags.')
     else:
-        out = (f'Attempting to remove a {p_name} from '
-               f'the bag{"s" if len(bag_names)>1 else ""} {", ".join(bag_names)}')
+        if len(bag_names) > 3:
+            # Show only first two and add ellipsis
+            out = (f'Attempting to remove a {p_name} from '
+                    f'the bags {", ".join(bag_names[:2])}, and {len(bag_names)-2} other bags.')
+        else:
+            out = (f'Attempting to remove a {p_name} from '
+                   f'the bag{"s" if len(bag_names)>1 else ""} {", ".join(bag_names)}')
     simple_name = p_name.replace('Potion of ','')
     for item in [p_name, f'{simple_name} potion', simple_name]:
         try:

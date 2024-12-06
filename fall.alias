@@ -7,6 +7,7 @@ jh.setup(
         al_name=al_name,
         footer=footer,
         )
+using(maplib=jh.LIB['maplib'])
 
 ch = character()
 
@@ -49,13 +50,13 @@ args = argparse(args)
 targets = args.get('t', []) or []
 use_map = not bool(args.last('nomap', False))
 
-# if not targets:
-#     return jh.embed(
-#         title=title,
-#         desc=desc,
-#         fields=[{'title':'No targets specified!','body':'You need to specify at least one target with `-t`'}],
-#         f_thumb=None,
-#         )
+if not targets:
+    return jh.embed(
+        title=title,
+        desc=desc,
+        fields=[{'title':'No targets specified!','body':'You need to specify at least one target with `-t`'}],
+        f_thumb=None,
+        )
 
 uniq, mult, none = jh.resolve_targets(targets)
 warns = []
@@ -90,7 +91,7 @@ if dist is None:
                        f'0 as the falling distance.'))
 else:
     desc_l.append(f'Falling distance: {dist} ft.')
-    desc_l.append(f'Damage: {min(dist//10,20)}d6 [bludgeoning]')
+    desc_l.append(f'Damage: {min(abs(dist)//10,20)}d6 [bludgeoning]')
 if use_map:
     desc_l.append(f'Will update heights on map.')
 else:
@@ -98,6 +99,7 @@ else:
 
 warns_l = []
 fs = []
+has_negative_fall = False
 for t_arg, [target] in uniq:
     t, arg = (t_arg.split('|', maxsplit=1)+[None])[:2]
     if use_map:
@@ -156,17 +158,36 @@ for t_arg, [target] in uniq:
     else:
         map_s = ''
     if target.resistances.is_resistant('magical bludgeoning'):
-        dmg_r = vroll(f'{min(c_dist//10,20)}d6//2')
+        dmg_r = vroll(f'{min(abs(c_dist)//10,20)}d6//2')
     else:
-        dmg_r = vroll(f'{min(c_dist//10,20)}d6')
+        dmg_r = vroll(f'{min(abs(c_dist)//10,20)}d6')
     dmg_s = f'**Damage**: {dmg_r} [falling bludgeoning]'
     hp_str = target.modify_hp(-dmg_r.total)
-    hp_str = f'{target.name} {hp_str} (-{dmg_r.total})'
-    fs.append({'title':hp_str, 'body':f'{dist_s}\n{dmg_s}{map_s}'})
+    hp_str = f'{target.name} {hp_str} ({-dmg_r.total})'
+    if dmg_r.total != 0:
+        # Took damage from fall, be prone
+        prone_ef = target.add_effect('Prone', passive_effects={'attack_advantage':-1}, buttons=[{
+            'automation':[{
+                'type': 'remove_ieffect',
+                }],
+            'label': 'Stand Up',
+            'verb': 'stands up',
+            'style': 1,
+            }],
+            desc=('''A prone creature's only movement option is to crawl, '''
+                  '''unless it stands up and thereby ends the condition'''),
+            )
+        prone_s = str(prone_ef).split('\n')[0]
+        prone_s = f'\n**Effect**: {prone_s}'
+    else:
+        prone_s = ''
+    fs.append({'title':hp_str, 'body':f'{dist_s}\n{dmg_s}{prone_s}{map_s}'})
+    if c_dist < 0:
+        has_negative_fall = True
 if len(fs) == 1:
-    title = f'{uniq[0][1][0].name} fell!'
+    title = f'{uniq[0][1][0].name} fell{" upwards"*has_negative_fall}!'
 else:
-    title = f'Some creatures fell!'
+    title = f'Some creatures fell{" (some upwards)"*has_negative_fall}!'
 if warns_l:
     warns_f = {'title':'Warning', 'body':'\n* '.join(['']+warns_l)}
     fs.append(warns_f)
