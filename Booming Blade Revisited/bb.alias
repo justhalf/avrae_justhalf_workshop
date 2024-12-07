@@ -4,15 +4,24 @@ footer = f'!{al_name} ? | Cast Booming Blade with your weapon!'
 
 using(jh='65a30ab9-540c-4bdf-86ce-7af4760604a9')
 using(wmodlib='3ca2e3aa-f3e6-4efe-bee8-eaaedaef6f7d')
+using(argprompt='f3dfc147-7804-4ade-ac94-01038f706fc8')
 jh.setup(
         al_name=al_name,
         footer=footer,
+        )
+wmodlib.setup(
+        al_name=al_name,
+        prompt_ambiguous=True,
+        )
+argprompt.setup(
+        cvar_name='bbMetadata',
+        timeout=30,
         )
 
 ch = character()
 co = combat()
 
-args = &ARGS&
+args, idx = argprompt.handle(&ARGS&)
 p_args = argparse(args)
 
 def escape(s):
@@ -64,9 +73,11 @@ bb_eff_name = 'Booming Blade Alias Temporary Effect'
 target.remove_effect(bb_eff_name)
 
 potent = load_json(ch.get_cvar('subclass','{}')).get('ClericLevel','') == 'Arcana' and ch.levels.get('ClericLevel', 0) >= 8
-success, raw = wmodlib.inject_bb(target, args[0], potent=potent)
-if not success:
-    return raw
+raw, myerr = wmodlib.inject_bb(target, args[0], potent=potent, idx=idx)
+if myerr:
+    if myerr.code == wmodlib.ERR.AMBIGUOUS:
+        argprompt.save(args)
+    return myerr.msg
 
 target.add_effect(bb_eff_name, attacks=[raw])
 args_s = ' '.join(f'"{escape(arg)}"' for arg in args[1:])

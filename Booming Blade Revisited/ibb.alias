@@ -4,19 +4,29 @@ footer = f'!{al_name} ? | Cast Booming Blade with current combatant weapon!'
 
 using(jh='65a30ab9-540c-4bdf-86ce-7af4760604a9')
 using(wmodlib='3ca2e3aa-f3e6-4efe-bee8-eaaedaef6f7d')
+using(argprompt='f3dfc147-7804-4ade-ac94-01038f706fc8')
 jh.setup(
         al_name=al_name,
         footer=footer,
+        )
+wmodlib.setup(
+        al_name=al_name,
+        prompt_ambiguous=True,
+        )
+argprompt.setup(
+        cvar_name='ibbMetadata',
+        timeout=30,
         )
 
 ch = character()
 co = combat()
 
-args = &ARGS&
+args, idx = argprompt.handle(&ARGS&)
 p_args = argparse(args)
 
 def escape(s):
     return s.replace('"', '\\"')
+
 
 # Alias begins here
 if not args or args[0] in ['?', 'h', 'help']:
@@ -48,20 +58,37 @@ if not co or not co.current:
               f'If it is for an off-turn attack, use `!rbb combatantName` instead.'),
         )
 target = co.current
-if not p_args.get('i') and not target.spellbook.can_cast('Booming Blade', 0):
-    return jh.embed(
-        title=f'{target.name} cannot cast Booming Blade! :x:',
-        desc=(f'{target.name} does not have the spell in their spellbook.\n\n'
-              f'Use `-i` to ignore this restriction.'),
-        f_thumb=False,
-        )
-
 bb_eff_name = 'Booming Blade Alias Temporary Effect'
-target.remove_effect(bb_eff_name)
+if target.type == 'group':
+    if not p_args.get('i') and not any(t.spellbook.can_cast('Booming Blade', 0) for t in target.combatants):
+        return jh.embed(
+            title=f'No combatants in the group {target.name} can cast Booming Blade! :x:',
+            desc=(f'None of the combatants have the spell in their spellbook.\n\n'
+                  f'Use `-i` to ignore this restriction.'),
+            f_thumb=False,
+            )
+    # Sanity clean up, to make sure no leftover effect
+    for t in target.combatants:
+        t.remove_effect(bb_eff_name)
+else:
+    if not p_args.get('i') and not target.spellbook.can_cast('Booming Blade', 0):
+        return jh.embed(
+            title=f'{target.name} cannot cast Booming Blade! :x:',
+            desc=(f'{target.name} does not have the spell in their spellbook.\n\n'
+                  f'Use `-i` to ignore this restriction.'),
+            f_thumb=False,
+            )
+    # Sanity clean up, to make sure no leftover effect
+    target.remove_effect(bb_eff_name)
 
-success, raw = wmodlib.inject_bb(target, args[0])
-if not success:
-    return raw
+(attack, target), myerr = wmodlib.get_attack(target, args[0], idx=idx)
+if myerr:
+    if myerr.code == wmodlib.ERR.AMBIGUOUS:
+        argprompt.save(args)
+    return myerr.msg
+raw, myerr = wmodlib.inject_bb(target, attack)
+if myerr:
+    return myerr.msg
 
 target.add_effect(bb_eff_name, attacks=[raw])
 args_s = ' '.join(f'"{escape(arg)}"' for arg in args[1:])

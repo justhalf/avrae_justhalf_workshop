@@ -1,0 +1,96 @@
+# GVAR: f3dfc147-7804-4ade-ac94-01038f706fc8
+# Module: argprompt (Handle user prompting for arguments)
+# A library to help handle user prompting a la Avrae (except we still need to run the alias
+# instead of just the number to select)
+#
+# This assumes that running the alias with the same command will give the same ambiguity in 
+# the same order
+#
+# Main functions:
+# setup(cvar_name, timeout) - set up the config
+# handle(args)
+#   process the args, return args, idx
+#   args will equal to the input if no pending confirmation, or if the selection is invalid
+#   otherwise it will be the saved args from previous pending call to this alias
+#   idx will be the selected number if this is a confirmation run, or None in all other cases
+# save(args)
+#   save current args, marking it as pending
+#   Typically this is used at the end of an alias, before returning and showing the user
+#   the available numbered options
+
+CVAR_NAME = 'CVAR_NAME'
+TIMEOUT = 'TIMEOUT'
+NOW = 'NOW'
+CHANNEL_ID = 'CHANNEL_ID'
+CONFIG = {
+    CVAR_NAME: None,
+    TIMEOUT: None,
+    NOW: None,
+    CHANNEL_ID: None,
+    }
+
+def setup(cvar_name=None, timeout=None):
+    if cvar_name is None:
+        cvar_name = f'{ctx.alias}Metadata'
+    CONFIG[CVAR_NAME] = cvar_name
+
+    if timeout is None:
+        timeout = 30
+    CONFIG[TIMEOUT] = timeout
+
+    CONFIG[NOW] = time()
+    CONFIG[CHANNEL_ID] = f'{ctx.guild.id}/{ctx.channel.id}'
+
+def get_metadata():
+    ch = character()
+    metadata = {'pendingConfirmation': {}}
+    try:
+        metadata = load_json(ch.get_cvar(CONFIG.CVAR_NAME, dump_json(metadata)))
+    except:
+        ch.set_cvar(CONFIG.CVAR_NAME, dump_json(metadata))
+    return metadata
+
+def handle(args):
+    ch = character()
+    now = CONFIG.NOW
+    metadata = get_metadata()
+
+    # Clear out expired ones
+    to_delete = set()
+    for channel_id, pending in metadata['pendingConfirmation'].items():
+        if now - pending.timestamp >= CONFIG.TIMEOUT:
+            to_delete.add(channel_id)
+    metadata['pendingConfirmation'] = {key:val for key, val in metadata['pendingConfirmation'].items() if key not in to_delete}
+    ch.set_cvar(CONFIG.CVAR_NAME, dump_json(metadata))
+
+    channel_id = CONFIG.CHANNEL_ID
+
+    # Check whether current argument is a single number
+    if len(args) == 1 and args[0].isnumeric():
+        idx = int(args[0])-1
+    else:
+        idx = None
+
+    if channel_id in metadata['pendingConfirmation']:
+        pending = metadata['pendingConfirmation'][channel_id]
+        if idx is not None:
+            # If current argument is a single number, fetch from pending
+            args = pending.args
+        if args:
+            # If there is any argument, discard previous pending
+            # Either used (current arg is a single number), or unused (current argument is new)
+            metadata['pendingConfirmation'] = {key:val for key,val in metadata['pendingConfirmation'].items() if key != channel_id}
+            ch.set_cvar(CONFIG.CVAR_NAME, dump_json(metadata))
+    else:
+        # No pending, ignore idx
+        idx = None
+    return args, idx
+
+def save(args):
+    ch = character()
+    metadata = get_metadata()
+    now = CONFIG.NOW
+    channel_id = CONFIG.CHANNEL_ID
+
+    metadata['pendingConfirmation'][channel_id] = {'args':args, 'timestamp':now}
+    ch.set_cvar(CONFIG.CVAR_NAME, dump_json(metadata))

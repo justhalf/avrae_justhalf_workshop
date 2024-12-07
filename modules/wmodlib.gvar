@@ -8,8 +8,46 @@
 
 using(jh='65a30ab9-540c-4bdf-86ce-7af4760604a9')
 
-def inject_bb(target, weapon_name, potent=False):
-    is_self = target == combat().me
+PROMPT_AMBIGUOUS = 'prompt_ambiguous'
+AL_NAME = 'al_name'
+
+CONFIG = {
+    AL_NAME: None,
+    PROMPT_AMBIGUOUS: False,
+    }
+
+ERR = {
+    'AMBIGUOUS': 1,
+    'NOMATCH': 2,
+    'INVALID': 3,
+    }
+
+def setup(al_name=None, prompt_ambiguous=None):
+    if al_name is None:
+        al_name = ctx.alias
+    CONFIG[AL_NAME] = al_name
+
+    if prompt_ambiguous is None:
+        prompt_ambiguous = False
+    CONFIG[PROMPT_AMBIGUOUS] = prompt_ambiguous
+
+def inject_bb(target, weapon_name_or_model, potent=False, idx=None):
+    """Return value: injected automation, err
+    
+    err is None if no error, otherwise an embed string to be returned from the alias
+    """
+    if typeof(weapon_name_or_model) == 'str':
+        weapon_name = weapon_name_or_model
+        (weapon, target), myerr = get_attack(target, weapon_name, idx=idx)
+        if myerr:
+            return None, myerr
+    else:
+        weapon = weapon_name_or_model
+        weapon_name = weapon.raw.name
+
+    # At this point target is always a SimpleCombatant and weapon is AliasAttack
+    raw = dict(weapon.raw)
+
     bb_n_dice = int((target.levels.total_level+1)//6)
     wisMod = target.stats.get_mod('wis')
     if bb_n_dice > 0:
@@ -17,34 +55,6 @@ def inject_bb(target, weapon_name, potent=False):
     else:
         bb_dmg_s = ''
     bb_dmg1_s = f'{bb_n_dice+1}d8{"+"+wisMod if potent else ""}[magical thunder]'
-
-    exact = []
-    matches = []
-    for att in target.attacks:
-        if weapon_name.lower() == att.raw.name.lower():
-            exact.append(att)
-        if weapon_name.lower() in att.raw.name.lower():
-            matches.append(att)
-    matches = exact or matches
-    if len(matches) > 1:
-        names = [att.raw.name for att in matches]
-        names_s = '\n* '.join(['']+names)
-        return (False, jh.embed(
-            title='Ambiguous Weapon Name :x:',
-            desc=f'There are multiple weapons matching the name `{weapon_name}`:{names_s}',
-            f_thumb=is_self,
-            ))
-    elif len(matches) == 0:
-        atts_s = '\n* '.join(['']+[att.raw.name for att in target.attacks])
-        atts_s = f'\nYour attacks:{atts_s}' if is_self else ''
-        return (False, jh.embed(
-            title='No Weapon Matches :x:',
-            desc=f'There are no weapons matching the name `{weapon_name}`{atts_s}',
-            f_thumb=is_self,
-            ))
-    weapon = matches[0]
-    weapon_name = weapon.raw.name
-    raw = dict(weapon.raw)
 
     attack_model = {'attack':raw,
                     'override_default_dc':None,
@@ -135,13 +145,17 @@ def inject_bb(target, weapon_name, potent=False):
             raw['name'] = f'Booming Blade with {prefix}{raw["name"]}'
             raw['verb'] = 'casts'
     if success:
-        return (True, attack_model)
+        return attack_model, None
     else:
-        return (False, jh.embed(
-            title='Invalid Weapon :x:',
-            desc=f'The specified attack `{weapon_name}` does not deal any damage!',
-            f_thumb=is_self,
-            ))
+        return (None,
+                {'code':ERR.INVALID,
+                 'msg': jh.embed(
+                    title='Invalid Weapon :x:',
+                    desc=f'The specified attack `{weapon_name}` does not have any damage node!',
+                    f_thumb=target == combat().me,
+                    ),
+                 },
+                )
 
 def produce_target_nodes(root):
     output = []
@@ -185,3 +199,76 @@ def get_granting_effect(target, weapon_raw):
             if attack.attack == weapon_raw:
                 return attack
     return {}
+
+def get_attack(target, weapon_name, idx=None):
+    """Returns (matching_attack, target_with_that_attack), err
+
+    err is None if there is no error, otherwise it is an embed string to be returned
+    idx is used in case the attack is ambiguous but a specific one has been identified
+    by its position (a la Avrae prompting user for selection)
+    """
+    is_group = target.type == 'group'
+    if is_group:
+        is_self = any(t == combat().me for t in target.combatants)
+        attacks = [(att, t) for t in target.combatants for att in t.attacks]
+    else:
+        is_self = target == combat().me
+        attacks = [(att, target) for att in target.attacks]
+
+    exact = []
+    matches = []
+    for att, t in attacks:
+        if weapon_name.lower() == att.raw.name.lower():
+            exact.append((att, t))
+        if weapon_name.lower() in att.raw.name.lower():
+            matches.append((att, t))
+    matches = exact or matches
+    if len(matches) > 1:
+        if idx is not None and 0 <= idx < len(matches):
+            matches = [matches[idx]]
+        else:
+            if is_group:
+                names = [f'{att.raw.name} ({t.name})' for att, t in matches]
+            else:
+                names = [att.raw.name for att, t in matches]
+            fs = []
+            if CONFIG[PROMPT_AMBIGUOUS]:
+                fs.append({'title':'Attack Selection',
+                           'body':(f'You can select one of the attacks above without resupplying other arguments by '
+                                   f'typing `!{CONFIG[AL_NAME]} <num>`, where <num> is the number next to the '
+                                   f'attack above (between 1 and {len(names)})'),
+                           })
+                if idx is not None:
+                    fs.append({'title':'Invalid Selection :x:',
+                               'body':f'Your selection: "{idx+1}" is outside the possible range.',
+                               })
+                names = [f'{idx+1}. {name}' for idx, name in enumerate(names)]
+                names_s = '\n'.join(['']+names)
+            else:
+                names_s = '\n* '.join(['']+names)
+            return ((None, None),
+                    {'code': ERR.AMBIGUOUS,
+                     'msg': jh.embed(
+                        title='Ambiguous Weapon Name :x:',
+                        desc=f'There are multiple weapons matching the name `{weapon_name}`:{names_s}',
+                        fields=fs,
+                        f_thumb=is_self,
+                        ),
+                     },
+                    )
+    elif len(matches) == 0:
+        if is_group:
+            atts_s = '\n* '.join(['']+[f'{att.raw.name} ({t.name})' for att, t in attacks])
+        else:
+            atts_s = '\n* '.join(['']+[att.raw.name for att, t in attacks])
+        atts_s = f'\nYour attacks:{atts_s}' if is_self else ''
+        return ((None, None),
+                {'code':ERR.NOMATCH,
+                 'msg': jh.embed(
+                    title='No Weapon Matches :x:',
+                    desc=f'There are no weapons matching the name `{weapon_name}`{atts_s}',
+                    f_thumb=is_self,
+                    ),
+                 },
+                )
+    return matches[0], None
