@@ -68,10 +68,10 @@ success, raw = wmodlib.inject_bb(target, args[0], potent=potent)
 if not success:
     return raw
 
-target.add_effect(bb_eff_name, attacks=[{'attack':raw}])
+target.add_effect(bb_eff_name, attacks=[raw])
 args_s = ' '.join(f'"{escape(arg)}"' for arg in args[1:])
 cmds = [f'multiline',
-        f'!a "{escape(raw.name)}" {args_s}',
+        f'!a "{escape(raw.attack.name)}" {args_s}',
         f'!i re "{escape(target.name)}" "{bb_eff_name}"',
         ]
 return '\n'.join(cmds)

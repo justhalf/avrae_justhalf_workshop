@@ -13,10 +13,10 @@ def inject_bb(target, weapon_name, potent=False):
     bb_n_dice = int((target.levels.total_level+1)//6)
     wisMod = target.stats.get_mod('wis')
     if bb_n_dice > 0:
-        bb_dmg_s = f'+({bb_n_dice}d8{"+"+wisMod if potent else ""})[thunder]'
+        bb_dmg_s = f'+({bb_n_dice}d8{"+"+wisMod if potent else ""})[magical thunder]'
     else:
         bb_dmg_s = ''
-    bb_dmg1_s = f'{bb_n_dice+1}d8{"+"+wisMod if potent else ""}[thunder]'
+    bb_dmg1_s = f'{bb_n_dice+1}d8{"+"+wisMod if potent else ""}[magical thunder]'
 
     exact = []
     matches = []
@@ -44,6 +44,17 @@ def inject_bb(target, weapon_name, potent=False):
             ))
     weapon = matches[0]
     weapon_name = weapon.raw.name
+    raw = dict(weapon.raw)
+
+    attack_model = {'attack':raw,
+                    'override_default_dc':None,
+                    'override_default_attack_bonus':None,
+                    'override_default_casting_mod':None,
+                    }
+    granting_eff = get_granting_effect(target, raw)
+    attack_model['override_default_dc'] = granting_eff.get('override_default_dc', None)
+    attack_model['override_default_attack_bonus'] = granting_eff.get('override_default_attack_bonus', None)
+    attack_model['override_default_casting_mod'] = granting_eff.get('override_default_casting_mod', None)
 
     bb_text_auto = {
             "type": "text",
@@ -79,13 +90,12 @@ def inject_bb(target, weapon_name, potent=False):
                 },
                 bb_text_auto,
               ]+([bb_potent_auto] if potent else []),
-              "verb": "moved and took Booming Blade damage",
+              "verb": "triggered Booming Blade",
               "style": "4",
             }
           ]
         }
 
-    raw = dict(weapon.raw)
     success = False
     if raw.get('automation', []):
         raw['automation'] = [dict(v) for v in raw['automation']]
@@ -125,7 +135,7 @@ def inject_bb(target, weapon_name, potent=False):
             raw['name'] = f'Booming Blade with {prefix}{raw["name"]}'
             raw['verb'] = 'casts'
     if success:
-        return (True, raw)
+        return (True, attack_model)
     else:
         return (False, jh.embed(
             title='Invalid Weapon :x:',
@@ -168,3 +178,10 @@ def produce_damage_nodes(root):
             output.extend(produce_damage_nodes(eff['onTrue']))
             output.extend(produce_damage_nodes(eff['onFalse']))
     return output
+
+def get_granting_effect(target, weapon_raw):
+    for eff in target.effects:
+        for attack in eff.attacks:
+            if attack.attack == weapon_raw:
+                return attack
+    return {}
