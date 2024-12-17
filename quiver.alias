@@ -11,31 +11,7 @@ ch = character()
 args = &ARGS&
 sub_cs = ['?', 'help', 'list', 'setup', 'create', 'delete', 'modify', 'add', 'move']
 
-default_arrow_types = {
-        'Arrows': {'short':'Arrows', 'alias':['Arrow'], 'disp':'__Arrows__', 'track':'all'},
-        'Arrows +1': {'short':'Arrows +1', 'alias':['+1'], 'disp':'Arrows __+1__', 'track':'all'},
-        'Hammerhead Arrows': {'short':'Hammerhead', 'alias':['Hammer', 'Hammerhead'], 'disp':'__Hammer__head Arrows', 'track':'all'},
-        'Broadhead Arrows': {'short':'Broadhead', 'alias':['Broad', 'Broadhead'], 'disp':'__Broad__head Arrows', 'track':'all'},
-        'Corkscrew Arrows': {'short':'Corkscrew', 'alias':['Cork', 'Corkscrew'], 'disp':'__Cork__screw Arrows', 'track':'all'},
-        'Rope Arrows': {'short':'Rope', 'alias':['Rope'], 'disp':'__Rope__ Arrows', 'track':'all'},
-        'Fire Arrows': {'short':'Fire', 'alias':['Fire'], 'disp':'__Fire__ Arrows', 'track':'stored'},
-        'Knock-out Arrows': {'short':'Knock-out', 'alias':['Knock', 'Knock-out'], 'disp':'__Knock__-out Arrows', 'track':'stored'},
-        'Blinding Arrows': {'short':'Blinding', 'alias':['Blind', 'Blinding'], 'disp':'__Blind__ing Arrows', 'track':'stored'},
-        'Concussion Arrows': {'short':'Concussion', 'alias':['Concuss', 'Concussion'], 'disp':'__Concuss__ion Arrows', 'track':'stored'},
-        'Smoking Arrows': {'short':'Smoking', 'alias':['Smoke', 'Smoking'], 'disp':'__Smoking__ Arrows', 'track':'stored'},
-        'Poisoncloud Arrows': {'short':'Poisoncloud', 'alias':['Poison', 'Poisoncloud'], 'disp':'__Poison__cloud Arrows', 'track':'stored'},
-        'Magefire Arrows': {'short':'Magefire', 'alias':['Mage', 'Magefire'], 'disp':'__Mage__fire Arrows', 'track':'stored'},
-        'Explosive Arrows': {'short':'Explosive', 'alias':['Explosive', 'Explode'], 'disp':'__Explosive__ Arrows', 'track':'stored'},
-        'Ice Arrows': {'short':'Ice', 'alias':['Ice'], 'disp':'__Ice__ Arrows', 'track':'stored'},
-        'Thunderclap Arrows': {'short':'Thunderclap', 'alias':['Thunder', 'Thunderclap'], 'disp':'__Thunderclap__ Arrows', 'track':'stored'},
-        'Lightning Arrows': {'short':'Lightning', 'alias':['Lightning'], 'disp':'__Lightning__ Arrows', 'track':'stored'},
-        'Mind Piercers': {'short':'Mind', 'alias':['Mind'], 'disp':'__Mind__ Piercers', 'track':'stored'},
-        'Holy Arrows': {'short':'Holy', 'alias':['Holy'], 'disp':'__Holy__ Arrows', 'track':'stored'},
-        'Unholy Arrows': {'short':'Unholy', 'alias':['Unholy'], 'disp':'__Unholy__ Arrows', 'track':'stored'},
-        'Acid Arrows': {'short':'Acid', 'alias':['Acid'], 'disp':'__Acid__ Arrows', 'track':'stored'},
-        'Glue Arrows': {'short':'Glue', 'alias':['Glue'], 'disp':'__Glue__ Arrows', 'track':'stored'},
-        'Healing Arrows': {'short':'Healing', 'alias':['Heal', 'Healing'], 'disp':'__Heal__ing Arrows', 'track':'stored'},
-        }
+default_arrow_types = load_json(get_gvar("9c5a97b4-450c-441a-850e-466a7b510389"))
 try:
     quiver_config = load_json(ch.get_cvar('quiverConfig', '{}'))
 except:
@@ -131,6 +107,7 @@ def warn_s(as_obj=False):
 LOCS = {
         'all': ['', 'Stored ', 'Used '],
         'stored': ['', 'Stored '],
+        'used': ['', 'Used '],
         'none': [''],
         }
 LOCS_P_TO_LOC = {'m': '',
@@ -240,8 +217,10 @@ if subc == 'list':
         )
 
 if subc == 'setup':
-    use_bolt = bool(argparse(args[1:]).last('bolt', False))
-    setup_list = [arg for arg in args[1:] if arg != '-bolt']
+    k_args, l_args = jh.take_args(args[1:], {'usebolt':False, 'nostore':False})
+    use_bolt = bool(k_args['usebolt'])
+    no_store = bool(k_args['nostore'])
+    setup_list = l_args
     if len(setup_list) == 0:
         fs = disp_cols([f'* {arrow["disp"]}' for arrow in default_arrow_types.values()], as_obj=True)
         return jh.embed(
@@ -249,13 +228,19 @@ if subc == 'setup':
             desc=(
                 f'Sets up your list of arrows based on the default list of arrows.\n\n'
                 f'**Usage**\n'
-                f'`!{al_name} setup (all) (<arrow_type>)* (-bolt)`\n'
+                f'`!{al_name} setup (all) (<arrow_type>)* (usebolt) (nostore)`\n'
                 f'* `all`: to setup ALL arrows in the ER Expanded Arrows document\n'
                 f'* `<arrow_type>`: select the special arrow to be set up\n'
-                f'* `-bolt`: use bolts instead of arrows\n\n'
+                f'* `usebolt`: use bolts instead of arrows\n'
+                f'* `nostore`: do not create Stored versions\n\n'
                 f'**Examples**\n'
-                f'`!{al_name} setup all`\n* Make the CCs for all special arrows\n'
-                f'`!{al_name} setup smoking blinding -bolt`\n* Make the CCs for Smoking Bolts and Blinding Bolts'
+                f'`!{al_name} setup all`\n'
+                f'* Make the CCs for all special arrows\n'
+                f'`!{al_name} setup smoking blinding usebolt`\n'
+                f'* Make the CCs for Smoking Bolts and Blinding Bolts\n'
+                f'`!{al_name} setup cork blind nostore`\n'
+                f'* Make the CCs for Corkscrew Arrows and Blinding Arrows, creating only main and possibly Used CCs '
+                f'(no Stored Corkscrew Arrows)'
                 ),
             fields=[
                 {'title':f'',
@@ -286,6 +271,11 @@ if subc == 'setup':
             arrow['short'] = arrow['short'].replace('Arrow', 'Bolt')
             arrow['disp'] = arrow['disp'].replace('Arrow', 'Bolt')
             arrow['alias'] = [a.replace('Arrow', 'Bolt') for a in arrow['alias']]
+        if no_store:
+            if arrow['track'] == 'all':
+                arrow['track'] = 'used'
+            elif arrow['track'] == 'stored':
+                arrow['track'] = 'none'
         alias = [a for a in arrow['alias'] if (a.lower() not in alias_map or alias_map[a.lower()] == arrow_type)]
         for a in alias:
             alias_map[a] = arrow_type

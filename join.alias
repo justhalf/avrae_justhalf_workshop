@@ -16,14 +16,14 @@ p_args = argparse(args)
 
 # Alias begins here
 if args:
-    loc = args[0]
+    loc = args[0].capitalize()
 else:
     loc = ''
 
 join_cvar = 'join'
 join_cmd = ch.get_cvar('join', None)
 if join_cmd is None:
-    join_cmd = 'i join'
+    join_cmd = '[{"fn":"join"}]'
 
 if join_cmd[0] != '[':
     # Old join cvar format which is simply run after replacing the location
@@ -45,7 +45,9 @@ if join_cmd[0] != '[':
 
 open_co = '<drac2'+'>'
 clos_co = '</drac2'+'>'
-ARG_DISP_LIMIT = 25
+
+def escape(s):
+    return s.replace('"', '\\"')
 
 def argify(s):
     if typeof(s) == 'str':
@@ -81,12 +83,24 @@ for join_cmd in join_cmds:
             effects = []
         cmds.append(fn.replace('%LOC%', loc))
         continue
+    elif fn == 'join':
+        # Special function: join
+        if loc:
+            fields = [field.split(': ', maxsplit=1) for field in join_cmd.get('note', '').split(' | ')]
+            note = {field[0].lower():field[1] for field in fields if len(field) == 2}
+            note['location'] = loc
+            join_cmd['note'] = ' | '.join(f'{key.title()}: {value}' for key, value in note.items())
+            phrase = join_cmd.get('phrase', '')
+            join_cmd['phrase'] = (phrase + f'\n\n-# Placed at {loc}').strip('\n')
+        join_args = ' '.join(f'-{key} "{escape(value)}"' for key, value in join_cmd.items() if key != 'fn')
+        cmds.append(f'!i join {join_args}')
+        continue
     effects.append(join_cmd)
 if effects:
     cmds.append(build_cmd(effects))
     effects = []
 if len(cmds) == 1:
-    return '!'+cmds[0].lstrip('!')
+    return cmds[0].lstrip('!')
 cmds[0:0] = ['multiline']
 return '\n'.join(cmds)
 </drac2>

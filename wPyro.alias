@@ -19,7 +19,10 @@ cc_name = 'Wand of Pyrotechnics'
 ch.create_cc_nx(cc_name, minVal=0, maxVal=7, reset_by='1d6+1', reset='long', dispType='bubble',
                 desc='For Wand of Pyrotechnics. Regains 1d6+1 charges at dawn.')
 cc_val = ch.get_cc(cc_name)
-if cc_val < 1:
+amt = p_args.last('amt', type_=int) or 1
+if amt < 0:
+    amt = 1
+if cc_val < amt:
     return jh.embed(
         title='Failed to use Wand of Pyrotechnics! :x:',
         desc=(f'''You don't have enough charges in your Wand of Pyrotechnics to use it now.'''),
@@ -27,8 +30,8 @@ if cc_val < 1:
 
 fs = []
 
-ch.mod_cc(cc_name, -1)
-cc_str = f'{ch.cc(cc_name)} (-1)'
+ch.mod_cc(cc_name, -amt)
+cc_str = f'{ch.cc(cc_name)} (-{amt})'
 if ch.get_cc(cc_name) == 0:
     last_check = vroll('1d20')
     destroyed = last_check.total == 1
