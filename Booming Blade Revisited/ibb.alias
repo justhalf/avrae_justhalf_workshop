@@ -21,7 +21,7 @@ argprompt.setup(
 ch = character()
 co = combat()
 
-args, idx = argprompt.handle(&ARGS&)
+args, sels = argprompt.handle(&ARGS&)
 p_args = argparse(args)
 
 def escape(s):
@@ -81,7 +81,7 @@ else:
     # Sanity clean up, to make sure no leftover effect
     target.remove_effect(bb_eff_name)
 
-(attack, target), myerr = wmodlib.get_attack(target, args[0], idx=idx)
+(attack, target), myerr = wmodlib.get_attack(target, args[0], sels=sels)
 if myerr:
     if myerr.code == wmodlib.ERR.AMBIGUOUS:
         argprompt.save(args)

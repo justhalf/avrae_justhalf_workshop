@@ -21,7 +21,7 @@ argprompt.setup(
 ch = character()
 co = combat()
 
-args, idx = argprompt.handle(&ARGS&)
+args, sels = argprompt.handle(&ARGS&)
 p_args = argparse(args)
 
 def escape(s):
@@ -78,7 +78,7 @@ if not p_args.get('i') and not target.spellbook.can_cast('Booming Blade', 0):
 bb_eff_name = 'Booming Blade Alias Temporary Effect'
 target.remove_effect(bb_eff_name)
 
-raw, myerr = wmodlib.inject_bb(target, args[1], idx=idx)
+raw, myerr = wmodlib.inject_bb(target, args[1], sels=sels)
 if myerr:
     if myerr.code == wmodlib.ERR.AMBIGUOUS:
         argprompt.save(args)

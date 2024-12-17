@@ -32,14 +32,14 @@ co = combat()
 
 al_desc = (f'__**Usage**__:\n'
            f'`!{al_name} <potion name> (-t target)* (-choice option) (-rr n) (nobag) (-bag bagName) '
-           f'(-dur <duration>) (max/sadv/sdis) (-d <dmg dice>)`\n'
+           f'(-dur <duration>) (max/gift/sadv/sdis) (-d <dmg dice>)`\n'
            f'* Administer the named potion to self, or to target(s) if specified\n'
            f'* `-choice option` to configure the potion (for example, `-choice grease` for Oil of Slipperiness)\n'
            f'* `-rr n` to apply the potions multiple times (for example, for Potion of Healing)\n'
            f'* `nobag` to ignore bag management\n'
            f'* `-bag bagName` to prioritize `bagName` when looking for matching potions\n'
            f'* `-dur <duration>` to override the default duration. Accepts dice string as well.\n'
-           f'* `max` to maximize healing/damage (e.g., for Gift of the Ever-Living Ones warlock invocations)\n'
+           f'* `max`/`gift` to maximize healing/damage (i.e., for Gift of the Ever-Living Ones warlock invocations)\n'
            f'* `sadv/sdis` to give adv/dis to saving throws (e.g., Potion of Poison)\n'
            f'* `-d <dmg_dice>` to add more damage (if positive) or healing (if negative)\n'
            f'* `nomap` to not handle map (e.g., Potion of Growth and Diminution changing size)\n\n'
@@ -173,7 +173,7 @@ if invalid_potions:
 ### Begin argument parsing ###
 
 arg_config = {'-d':True, '-t':True, '-choice':True, '-rr':True, '-h':True, 'nobag':False, '-bag':True,
-              'sadv':False, 'sdis':False, 'max':False, '-dur':True, 'nomap':False}
+              'sadv':False, 'sdis':False, 'max':False, '-dur':True, 'nomap':False, 'gift':False}
 
 config_cvar = 'potionSettings'
 c_config = load_json(ch.get_cvar(config_cvar, '{}'))
@@ -205,21 +205,23 @@ elif args[0] == 'setup':
         return jh.embed(
             title=f'{ch.name} looks at their potion setup!',
             desc=s_setup,
+            fields=[{'title':'Potion Setup Help',
+                     'body':f'You can run `!{al_name} setup help` for more information on setup.'}],
             )
     elif args[0] in ['?', 'h', 'help']:
         desc = (f'## For players:\n'
                 f'`!{al_name} setup <args>`\n'
-                f'* You can setup some common arguments for each potion that will automatically applied when you '
+                f'* You can set up some common arguments for each potion that will automatically applied when you '
                 f'use that potion. You can also specify global arguments which apply to all potions by specifying '
                 f'an empty potion `""`, like so:\n'
                 f'  `!{al_name} setup "" [args]`\n\n'
-                f'__Examples__'
-                f'* After you setup\n'
-                f'  `!{al_name} setup slipperi -choice freedom`\n'
+                f'__Examples__\n'
+                f'* After you set up\n'
+                f'  * `!{al_name} setup slipperi -choice freedom`\n'
                 f'  you can simply run `!{al_name} slipper` and it will automatically choose the Freedom of Movement '
                 f'version of the Oil of Slipperiness\n'
                 f'* For global setting to not use OTFBM map (used in Potion of Growth/Diminution), you can do:\n'
-                f'  `!{al_name} setup "" nomap`\n\n'
+                f'  * `!{al_name} setup "" nomap`\n\n'
                 f'## For server admins:\n'
                 f'You can have a default server-wide list of potions, available to all players in the server.\n'
                 f'The potion list is stored in the svar `{hb_var}`, containing a list. Each item in the list can '
@@ -376,7 +378,8 @@ k_args, l_args = jh.take_args(args, arg_config)
 # Recall that k_args always contains the key, and for those starting with - it's a list, otherwise an int.
 d_dmg = '+'.join(k_args['-d'])
 a_sadv = min(1, k_args['sadv'])-min(1, k_args['sdis'])
-do_max = bool(k_args['max'])
+has_gift = bool(k_args['gift'])
+do_max = bool(k_args['max']) or has_gift
 dur = (k_args['-dur']+[None])[0]
 rr = int((k_args['-rr']+['1'])[0])
 ignore_bag = bool(k_args['nobag'])
@@ -639,7 +642,7 @@ for t_arg, [target] in t_uniq:
                 else:
                     existing_ef = None
                 if existing_ef and (existing_dur := existing_ef.duration):
-                    ef_dur_roll = vroll(f'({ef_dur},{existing_dur})kh1')
+                    ef_dur_roll = vroll(f'({ef_dur} [new],{existing_dur} [existing])kh1')
                 else:
                     ef_dur_roll = vroll(ef_dur)
                 ef_dur_s = str(ef_dur_roll)
@@ -720,7 +723,14 @@ for t_arg, [target] in t_uniq:
                 p_dmg = f'{p_dmg}+{d_dmg}'
             if do_max:
                 p_dmg = dicelib.maximize(p_dmg)
-                results.append('Maximizing damage/healing due to `max`')
+                if has_gift:
+                    results.append((f'Maximizing damage/healing due to `gift`:\n'
+                                    f'> __**Gift of the Ever-Living Ones**__\n'
+                                    f'> Whenever you regain hit points while your familiar is within 100 feet of you, '
+                                    f'treat any dice rolled to determine the hit points you regain as having rolled '
+                                    f'their maximum value for you.'))
+                else:
+                    results.append('Maximizing damage/healing due to `max`')
             dmg_s = []
             dmg_total = 0
             for _ in range(t_rr):

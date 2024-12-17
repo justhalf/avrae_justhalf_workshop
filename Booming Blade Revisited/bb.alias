@@ -21,7 +21,7 @@ argprompt.setup(
 ch = character()
 co = combat()
 
-args, idx = argprompt.handle(&ARGS&)
+args, sels = argprompt.handle(&ARGS&)
 p_args = argparse(args)
 
 def escape(s):
@@ -73,7 +73,7 @@ bb_eff_name = 'Booming Blade Alias Temporary Effect'
 target.remove_effect(bb_eff_name)
 
 potent = load_json(ch.get_cvar('subclass','{}')).get('ClericLevel','') == 'Arcana' and ch.levels.get('ClericLevel', 0) >= 8
-raw, myerr = wmodlib.inject_bb(target, args[0], potent=potent, idx=idx)
+raw, myerr = wmodlib.inject_bb(target, args[0], potent=potent, sels=sels)
 if myerr:
     if myerr.code == wmodlib.ERR.AMBIGUOUS:
         argprompt.save(args)

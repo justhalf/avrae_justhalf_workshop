@@ -9,10 +9,11 @@
 # Main functions:
 # setup(cvar_name, timeout) - set up the config
 # handle(args)
-#   process the args, return args, idx
+#   process the args, return args, sels
 #   args will equal to the input if no pending confirmation, or if the selection is invalid
 #   otherwise it will be the saved args from previous pending call to this alias
-#   idx will be the selected number if this is a confirmation run, or None in all other cases
+#   sels will be a list of selected number, the latest selection at the beginning of the list
+#
 # save(args)
 #   save current args, marking it as pending
 #   Typically this is used at the end of an alias, before returning and showing the user
@@ -28,6 +29,8 @@ CONFIG = {
     NOW: None,
     CHANNEL_ID: None,
     }
+
+sels = []
 
 def setup(cvar_name=None, timeout=None):
     if cvar_name is None:
@@ -76,6 +79,9 @@ def handle(args):
         if idx is not None:
             # If current argument is a single number, fetch from pending
             args = pending.args
+            # Append current selection to past selections
+            sels.append(idx)
+            sels.extend(pending.sels)
         if args:
             # If there is any argument, discard previous pending
             # Either used (current arg is a single number), or unused (current argument is new)
@@ -84,7 +90,7 @@ def handle(args):
     else:
         # No pending, ignore idx
         idx = None
-    return args, idx
+    return args, list(sels) # Return a copy so user don't modify it
 
 def save(args):
     ch = character()
@@ -92,5 +98,7 @@ def save(args):
     now = CONFIG.NOW
     channel_id = CONFIG.CHANNEL_ID
 
-    metadata['pendingConfirmation'][channel_id] = {'args':args, 'timestamp':now}
+    metadata['pendingConfirmation'][channel_id] = {'args':args,
+                                                   'sels': sels,
+                                                   'timestamp':now}
     ch.set_cvar(CONFIG.CVAR_NAME, dump_json(metadata))

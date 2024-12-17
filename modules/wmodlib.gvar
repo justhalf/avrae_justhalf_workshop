@@ -1,10 +1,11 @@
 # GVAR: 3ca2e3aa-f3e6-4efe-bee8-eaaedaef6f7d
 # Module: wmodlib (Weapon Modification library) 
 #
-# inject_bb(target, weapon_name)
+# inject_bb(target, weapon_name, sels=[])
 #    Return a tuple (bool, result)
 #    If bool is True, result is the modified weapon automation as Python dict
 #    If bool is False, result is the embed string to be returned as error message
+#    sels is a list of numbers for disambiguation
 
 using(jh='65a30ab9-540c-4bdf-86ce-7af4760604a9')
 
@@ -22,6 +23,9 @@ ERR = {
     'INVALID': 3,
     }
 
+ARROW_TYPES = {}
+ARROW_ALIAS_MAP = {}
+
 def setup(al_name=None, prompt_ambiguous=None):
     if al_name is None:
         al_name = ctx.alias
@@ -31,14 +35,14 @@ def setup(al_name=None, prompt_ambiguous=None):
         prompt_ambiguous = False
     CONFIG[PROMPT_AMBIGUOUS] = prompt_ambiguous
 
-def inject_bb(target, weapon_name_or_model, potent=False, idx=None):
+def inject_bb(target, weapon_name_or_model, potent=False, sels=[]):
     """Return value: injected automation, err
     
     err is None if no error, otherwise an embed string to be returned from the alias
     """
     if typeof(weapon_name_or_model) == 'str':
         weapon_name = weapon_name_or_model
-        (weapon, target), myerr = get_attack(target, weapon_name, idx=idx)
+        (weapon, target), myerr = get_attack(target, weapon_name, sels=sels)
         if myerr:
             return None, myerr
     else:
@@ -110,15 +114,15 @@ def inject_bb(target, weapon_name_or_model, potent=False, idx=None):
     if raw.get('automation', []):
         raw['automation'] = [dict(v) for v in raw['automation']]
         target_nodes = produce_target_nodes(raw['automation'])
-        for eff, eff_parent, eff_idx in target_nodes:
+        for eff_idx, eff, target_node_parent in target_nodes:
             if eff.get('type', '') == 'target' and eff.get('target', '') in ['each', 'all']:
                 eff['effects'] = [dict(v) for v in eff.get('effects', [])]
                 attack_nodes = produce_attack_nodes(eff['effects'])
-                for attack_node, attack_node_parent, attack_node_idx in attack_nodes:
+                for attack_node_idx, attack_node, attack_node_parent in attack_nodes:
                     if attack_node.get('type', '') == 'attack':
                         attack_node['hit'] = [dict(v) for v in attack_node.get('hit', [])]
                         damage_nodes = produce_damage_nodes(attack_node['hit'])
-                        for damage_node, damage_node_parent, damage_node_idx in damage_nodes:
+                        for damage_node_idx, damage_node, damage_node_parent in damage_nodes:
                             if damage_node.get('type', '') == 'damage' and not damage_node.get('fixedValue', False):
                                 success = True
                                 new_damage_node = dict(damage_node)
@@ -150,8 +154,8 @@ def inject_bb(target, weapon_name_or_model, potent=False, idx=None):
         return (None,
                 {'code':ERR.INVALID,
                  'msg': jh.embed(
-                    title='Invalid Weapon :x:',
-                    desc=f'The specified attack `{weapon_name}` does not have any damage node!',
+                    title='Ineligible Weapon :x:',
+                    desc=f'The specified attack `{weapon_name}` is not an eligible weapon attack!',
                     f_thumb=target == combat().me,
                     ),
                  },
@@ -161,7 +165,7 @@ def produce_target_nodes(root):
     output = []
     for idx, eff in enumerate(root):
         if eff.get('type', '') == 'target' and eff.get('target', '') in ['each', 'all']:
-            output.append((eff, root, idx))
+            output.append((idx, eff, root))
         elif eff.get('type', '') == 'condition':
             eff['onTrue'] = [dict(v) for v in eff.get('onTrue', [])]
             eff['onFalse'] = [dict(v) for v in eff.get('onFalse', [])]
@@ -173,7 +177,7 @@ def produce_attack_nodes(root):
     output = []
     for idx, eff in enumerate(root):
         if eff.get('type', '') == 'attack':
-            output.append((eff, root, idx))
+            output.append((idx, eff, root))
         elif eff.get('type', '') == 'condition':
             eff['onTrue'] = [dict(v) for v in eff.get('onTrue', [])]
             eff['onFalse'] = [dict(v) for v in eff.get('onFalse', [])]
@@ -185,7 +189,7 @@ def produce_damage_nodes(root):
     output = []
     for idx, eff in enumerate(root):
         if eff.get('type', '') == 'damage' and not eff.get('fixedValue', False):
-            output.append((eff, root, idx))
+            output.append((idx, eff, root))
         elif eff.get('type', '') == 'condition':
             eff['onTrue'] = [dict(v) for v in eff.get('onTrue', [])]
             eff['onFalse'] = [dict(v) for v in eff.get('onFalse', [])]
@@ -200,12 +204,13 @@ def get_granting_effect(target, weapon_raw):
                 return attack
     return {}
 
-def get_attack(target, weapon_name, idx=None):
+def get_attack(target, weapon_name, sels=[]):
     """Returns (matching_attack, target_with_that_attack), err
 
     err is None if there is no error, otherwise it is an embed string to be returned
-    idx is used in case the attack is ambiguous but a specific one has been identified
-    by its position (a la Avrae prompting user for selection)
+    sels is used in case the attack is ambiguous but a specific one has been identified
+    by its position (a la Avrae prompting user for selection). It is a list for multiple 
+    selections
     """
     is_group = target.type == 'group'
     if is_group:
@@ -224,6 +229,10 @@ def get_attack(target, weapon_name, idx=None):
             matches.append((att, t))
     matches = exact or matches
     if len(matches) > 1:
+        try:
+            idx = sels.pop()
+        except:
+            idx = None
         if idx is not None and 0 <= idx < len(matches):
             matches = [matches[idx]]
         else:
@@ -236,7 +245,8 @@ def get_attack(target, weapon_name, idx=None):
                 fs.append({'title':'Attack Selection',
                            'body':(f'You can select one of the attacks above without resupplying other arguments by '
                                    f'typing `!{CONFIG[AL_NAME]} <num>`, where <num> is the number next to the '
-                                   f'attack above (between 1 and {len(names)})'),
+                                   f'attack above (between 1 and {len(names)})\n\n'
+                                   f'To cancel or to use different arguments, simply redo the full arguments.'),
                            })
                 if idx is not None:
                     fs.append({'title':'Invalid Selection :x:',
@@ -272,3 +282,288 @@ def get_attack(target, weapon_name, idx=None):
                  },
                 )
     return matches[0], None
+
+def inject_arrow(target, weapon_name_or_model, arrow_type=None, nodmg=False, sels=[]):
+    """Return value: injected automation, err
+    
+    err is None if no error, otherwise an embed string to be returned from the alias
+    """
+    if typeof(weapon_name_or_model) == 'str':
+        weapon_name = weapon_name_or_model
+        (weapon, target), myerr = get_attack(target, weapon_name, sels=sels)
+        if myerr:
+            return (None, None), myerr
+    else:
+        weapon = weapon_name_or_model
+        weapon_name = weapon.raw.name
+
+    # At this point target is always a SimpleCombatant and weapon is AliasAttack
+    raw = dict(weapon.raw)
+
+    # Get the arrow
+    load_arrows()
+    arrow, candidates = get_arrow(arrow_type, sels=sels)
+    if not arrow:
+        if len(candidates) > 1:
+            try:
+                idx = sels.pop()
+            except:
+                idx = None
+            if idx is not None and 0 <= idx < len(candidates):
+                candidates = [candidates[idx]]
+                arrow_s = '\n* '.join(['']+candidates)
+            else:
+                fs = []
+                if CONFIG[PROMPT_AMBIGUOUS]:
+                    fs.append({'title':'Arrow Selection',
+                               'body':(f'You can select one of the arrow types above without resupplying other arguments by '
+                                       f'typing `!{CONFIG[AL_NAME]} <num>`, where <num> is the number next to the '
+                                       f'arrow type above (between 1 and {len(candidates)})\n\n'
+                                       f'To cancel or to use different arguments, simply redo the full arguments.'),
+                               })
+                    if idx is not None:
+                        fs.append({'title':'Invalid Selection :x:',
+                                   'body':f'Your selection: "{idx+1}" is outside the possible range.',
+                                   })
+                    names = [f'{idx+1}. {name}' for idx, name in enumerate(candidates)]
+                    arrow_s = '\n'.join(['']+names)
+                else:
+                    arrow_s = '\n* '.join(['']+candidates)
+                return ((None, None),
+                        {'code': ERR.AMBIGUOUS,
+                         'msg': jh.embed(
+                            title='Ambiguous Arrow Type :x:',
+                            desc=f'There are multiple arrow types matching the name `{arrow_type}`:{arrow_s}',
+                            fields=fs,
+                            f_thumb=target == combat().me,
+                            ),
+                         },
+                        )
+            return ((None, None),
+                    {'code': ERR.AMBIGUOUS,
+                     'msg': jh.embed(
+                            title=f'Ambiguous Arrow Type :x:',
+                            desc=f'There are multiple arrow types matching `{arrow_type}`:{arrow_s}',
+                            f_thumb=target == combat().me,
+                            ),
+                     },
+                    )
+        else:
+            return ((None, None),
+                    {'code': ERR.NOMATCH,
+                     'msg': jh.embed(
+                        title='No Arrow Matches :x:',
+                        desc=f'There are no arrow type matching the name `{arrow_type}`',
+                        f_thumb=target == combat().me,
+                        ),
+                     },
+                    )
+
+    attack_model = {'attack':raw,
+                    'override_default_dc':None,
+                    'override_default_attack_bonus':None,
+                    'override_default_casting_mod':None,
+                    }
+    granting_eff = get_granting_effect(target, raw)
+    attack_model['override_default_dc'] = granting_eff.get('override_default_dc', None)
+    attack_model['override_default_attack_bonus'] = granting_eff.get('override_default_attack_bonus', None)
+    attack_model['override_default_casting_mod'] = granting_eff.get('override_default_casting_mod', None)
+
+    if arrow_type is None:
+        # Default arrow, no change
+        return (attack_model, ''), None
+
+    arrow_data = ARROW_TYPES[arrow]
+    magical = arrow_data.get('magical', False) # true, false
+    recover = arrow_data.get('recover', 'none') # half, halfmiss, none
+    arrow_desc = arrow_data.get('desc', '')
+    arrow_att = arrow_data.get('attack', {}) # Can contain "snippet", "after_damage", "after_attack", "after_first_target"
+
+    arrow_dc_varname = 'arrowDC'
+    default_arrow_dc = '8 + proficiencyBonus + dexterityMod'
+    if target == combat().me:
+        arrow_config = load_json(character().get_cvar('arrowConfig', '{}'))
+        arrow_dc = arrow_config.get('dc', default_arrow_dc) or default_arrow_dc
+        arrow_track = arrow_config.get('track', True)
+    else:
+        arrow_dc = default_arrow_dc
+        arrow_track = False
+    arrow_set_dc = {
+            "type": "variable",
+            "name": arrow_dc_varname,
+            "value": arrow_dc,
+            "onError": default_arrow_dc
+        }
+    arrow_set_track = {
+            "type": "variable",
+            "name": "arrow_track",
+            "value": int(arrow_track),
+            "onError": 1
+        }
+    arrow_use_counter_spend = [
+            {
+            "type": "counter",
+            "counter": arrow,
+            "amount": 1,
+            "allowOverflow": False,
+            "errorBehavior": "warn",
+            },
+        ]
+    arrow_use_counter_recover = [
+            {
+            "type": "counter",
+            "counter": f'Used {arrow}',
+            "amount": -1,
+            "allowOverflow": False,
+            "errorBehavior": "warn",
+            },
+        ]
+
+    arrow_text_auto = {
+            "type": "text",
+            "text": arrow_desc,
+            "title": arrow,
+        }
+    after_init = arrow_att.get('after_init', [])
+    after_damage = arrow_att.get('after_damage', [])
+    after_attack = arrow_att.get('after_attack', [])
+    after_first_target = arrow_att.get('after_first_target', [])
+    after_target = arrow_att.get('after_target', [])
+    after_text = arrow_att.get('after_text', [])
+    snippet = arrow_att.get('snippet', '')
+    arrow_nodmg = arrow_att.get('nodmg', False)
+    arrow_noattack = arrow_att.get('noattack', False)
+    attack_adv = arrow_att.get('attack_adv', 0)
+    multitarget = arrow_att.get('multitarget', False)
+
+    success = False
+    if raw.get('automation', []):
+        raw['automation'] = [arrow_set_dc, arrow_set_track]+after_init+[dict(v) for v in raw['automation']]
+        target_nodes = produce_target_nodes(raw['automation'])
+        target_nodes.sort(reverse=True)
+        for _, target_node, target_node_parent in target_nodes:
+            target_success = False
+            if target_node.get('type', '') == 'target' and target_node.get('target', '') in ['each', 'all']:
+                target_node['effects'] = [dict(v) for v in target_node.get('effects', [])]
+                attack_nodes = produce_attack_nodes(target_node['effects'])
+                for attack_node_idx, attack_node, attack_node_parent in attack_nodes:
+                    attack_success = False
+                    if attack_node.get('type', '') == 'attack':
+                        attack_node['hit'] = [dict(v) for v in attack_node.get('hit', [])]
+                        damage_nodes = produce_damage_nodes(attack_node['hit'])
+                        for damage_node_idx, damage_node, damage_node_parent in damage_nodes:
+                            if damage_node.get('type', '') == 'damage' and not damage_node.get('fixedValue', False):
+                                target_success = True
+                                attack_success = True
+                                success = True
+                                if nodmg or arrow_nodmg:
+                                    if arrow_nodmg:
+                                        damage_node['damage'] = '0 [noarrowdmg]'
+                                    else:
+                                        damage_node['damage'] = '0 [nodmg]'
+                                    damage_node['fixedValue'] = True
+                                if after_damage:
+                                    damage_node_idx = damage_node_parent.index(damage_node)
+                                    damage_node_parent[damage_node_idx+1:damage_node_idx+1] = after_damage
+                    if attack_success:
+                        if attack_adv:
+                            old_adv = attack_node.get('adv', 0)
+                            new_adv = min(1, attack_adv)  + min(1, old_adv)
+                            new_adv = max(-1, min(1, new_adv))
+                            if new_adv == 1 and (attack_adv == 2 or old_adv == 2):
+                                new_adv = 2
+                            attack_node['adv'] = new_adv
+                        if after_attack:
+                            attack_node_idx = attack_node_parent.index(attack_node)
+                            attack_node_parent[attack_node_idx+1:attack_node_idx+1] = after_attack
+                        if recover == 'halfmiss' and arrow_track:
+                            attack_node['miss'] = [dict(v) for v in attack_node.get('miss', [])]
+                            attack_node['miss'][0:0] = arrow_use_counter_recover
+                        if arrow_noattack:
+                            attack_node_idx = attack_node_parent.index(attack_node)
+                            attack_node_parent[attack_node_idx:attack_node_idx+1] = []
+            if target_success:
+                if after_first_target:
+                    new_target_node = {
+                            "type": "condition",
+                            "condition": "lastAttackDidHit",
+                            "onTrue": after_first_target,
+                            "onFalse": [],
+                            }
+                    target_node_idx = target_node_parent.index(target_node)
+                    target_node_parent[target_node_idx+1:target_node_idx+1] = [new_target_node]
+                    target_node['target'] = '1'
+                if arrow_track:
+                    if recover == 'half':
+                        arrow_use_counter = arrow_use_counter_spend+arrow_use_counter_recover
+                    else:
+                        arrow_use_counter = arrow_use_counter_spend
+                    if multitarget:
+                        target_node['effects'][0:0] = [{
+                            'type': 'condition',
+                            'condition': 'targetIndex == 1',
+                            'onTrue': arrow_use_counter,
+                            'onFalse': [],
+                            }]
+                    else:
+                        target_node['effects'][0:0] = arrow_use_counter
+
+        if success:
+            if arrow_desc:
+                raw['automation'].append(arrow_text_auto)
+            if after_text:
+                raw['automation'].extend(after_text)
+            proper = raw.get('proper', False)
+            if not proper:
+                prefix = 'an ' if raw['name'][0].lower() in 'aeiou' else 'a '
+            else:
+                prefix = ''
+            raw['proper'] = False
+            arrow_name = arrow.replace('Arrows', 'Arrow').replace('Piercers', 'Piercer')
+            raw['name'] = f'{arrow_name} with {prefix}{raw.name}'
+            raw['verb'] = 'shoots'
+    if success:
+        return (attack_model, snippet), None
+    else:
+        return ((None, None),
+                {'code':ERR.INVALID,
+                 'msg': jh.embed(
+                    title='Ineligible Weapon :x:',
+                    desc=f'The specified attack `{weapon_name}` is not an eligible weapon attack!',
+                    f_thumb=target == combat().me,
+                    ),
+                 },
+                )
+
+def load_arrows():
+    if not ARROW_TYPES:
+        # Load for the first time
+        ARROW_TYPES.update(load_json(get_gvar("9c5a97b4-450c-441a-850e-466a7b510389")))
+        for arrow_type, arrow in ARROW_TYPES.items():
+            ARROW_ALIAS_MAP[arrow_type] = arrow_type
+            ARROW_ALIAS_MAP[arrow_type.lower()] = arrow_type
+            for alias in arrow['alias']:
+                ARROW_ALIAS_MAP[alias] = arrow_type
+                ARROW_ALIAS_MAP[alias.lower()] = arrow_type
+
+def get_arrow(name, sels=[]):
+    load_arrows()
+    cur_alias_map = ARROW_ALIAS_MAP
+    name = name.lower()
+    if name in cur_alias_map:
+        # For exact matches
+        name = cur_alias_map[name]
+        return name, [name]
+    candidates = list(set(cur_alias_map[c] for c in cur_alias_map.keys() if name in c))
+    idx = 1
+    if len(candidates) == 0:
+        return None, []
+    elif len(candidates) == 1 or sels:
+        try:
+            idx = sels.pop()
+        except:
+            idx = 0
+        return candidates[idx], candidates
+    else:
+        return None, candidates
+
